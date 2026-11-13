@@ -2,9 +2,19 @@ from mitmproxy import http
 import database,requests,re
 
 '''list of patterns that are considered vulnerable data'''
-vulnerable_data = [r"AFM",r"ΑΦΜ",r"AMKA",r"sk-[a-zA-Z0-9]{20,}",r"Password",
-r"secret",r"classified",r"do not share",r"confidential",r"\b\d{9}\b",
-r"\b(?:\d[ -]*?){13,16}\b",r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b",
+vulnerable_data = [
+    r"AFM",
+    r"ΑΦΜ",
+    r"AMKA",
+    r"sk-[a-zA-Z0-9]{20,}",
+    r"Password",
+    r"secret",
+    r"classified",
+    r"do not share",
+    r"confidential",
+    r"\b\d{9}\b",                                   
+    r"\b(?:\d[ -]*?){13,16}\b",                       
+    r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b"        
 ]
 LLM_DOMAINS = [
     "api.openai.com",
