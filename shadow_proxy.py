@@ -31,4 +31,4 @@ def data_hook(flow: http.HTTPFlow):
         action = "allowed" # no sensitive data detected so the text can pass
         mathced_info = "None"  
         
-#Μενει η αποστολή του log στον admin 
+#Μενει η αποστολή του log στον admin 2
