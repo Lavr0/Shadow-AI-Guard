@@ -17,8 +17,8 @@ def init_db():
     ''') # creates the the table for our database
     conn.commit()
     conn.close()
-    '''Method used to add a new log to the database'''
-    def add_log(client_ip, target_domain, action_taken, matched_content):
+'''Method used to add a new log to the database'''
+def add_log(client_ip, target_domain, action_taken, matched_content):
         conn = sqlite3.connect(db_name) #Reopens the database
         c = conn.cursor() #recreates the cursor
         c.execute('''
@@ -28,14 +28,14 @@ def init_db():
         conn.commit()
         conn.close()
 
-    def get_dashboard():
+def get_dashboard():
         conn = sqlite3.connect(db_name)
         conn.row_factory = sqlite3.Row  
         c = conn.cursor()
         
         logs = c.execute('SELECT * FROM logs ORDER BY id DESC LIMIT 50').fetchall()
         
-        total_requests = c.execute('SELECT COUNT(*) FROM logs').fetchone()[0]
+        total_requests = c.execute('SELECT COUNT(*) FROM logs').fetchone()[0] 
         blocked_requests = c.execute("SELECT COUNT(*) FROM logs WHERE action_taken = 'blocked'").fetchone()[0]
         allowed_requests = c.execute("SELECT COUNT(*) FROM logs WHERE action_taken = 'allowed'").fetchone()[0]
         
