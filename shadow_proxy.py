@@ -30,7 +30,7 @@ LLM_DOMAINS = [
     "chat.deepseek.com"
 ]
 
-def mask_sensitive_data(text):      #hides sensitive data,leaving only 4 last sensitive digits
+def mask_sensitive_data(text):      # hides sensitive data,leaving only 4 last sensitive digits
     if not text or text=="None":
         return "None"
     
@@ -41,6 +41,29 @@ def mask_sensitive_data(text):      #hides sensitive data,leaving only 4 last se
         return "*" * (len(text) - 4) + text[-4:]
     return "****"
     
+def ai_scan(text_to_check):
+    try:
+        '''Sets what the LLM should check for'''
+        prompt = (
+            "Analyze the following text. Does it contain sensitive personal data (like IDs, phone numbers, "
+            "passwords, or financial details) or confidential company secrets that should not be shared publicly? "
+            "Answer ONLY with 'YES' or 'NO'.\n\nText: " + text_to_check
+        )
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json = {
+                "model": "phi3",
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout = 3 # Για διαχειρηση της κίνησης
+        )
+        result = response.json().get("response", "").strip().upper()
+        return "YES" in result
+    except Exception as e:
+        print(f"Ollama check failed: {e}")
+        return False
+
 
 
 def request(flow: http.HTTPFlow):
@@ -51,13 +74,17 @@ def request(flow: http.HTTPFlow):
     target_domain = flow.request.pretty_host
     if target_domain in LLM_DOMAINS:
         detected = False
-        mathced_info = "None"
+        matched_info = "None"
         for pattern in vulnerable_data:
             match = re.search(pattern, content)
             if match:
                 detected = True # vulnerable data found
                 matched_info = match.group(0) # keeping what we found
                 break
+        if not detected:
+            if ai_scan(content):
+                detected = True
+                matched_info = "Ollama Semantic Match (Contextual PII)"
         # keeping ip
         client_ip = flow.client_conn.peername[0] if flow.client_conn.peername else "127.0.0.1"    
         if detected :
@@ -69,5 +96,6 @@ def request(flow: http.HTTPFlow):
             matched_info = mask_sensitive_data(matched_info)
         else:
             action = "allowed" # no sensitive data detected so the text can pass
-            mathced_info = "None"  
+            matched_info = "None"  
         database.add_log(client_ip, target_domain, action, matched_info)    
+ 
