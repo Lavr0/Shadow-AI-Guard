@@ -29,7 +29,20 @@ LLM_DOMAINS = [
     "chat.deepseek.com"
 ]
 
-def data_hook(flow: http.HTTPFlow):
+def mask_sensitive_data(text):      #hides sensitive data,leaving only 4 last sensitive digits
+    if not text or text=="None":
+        return "None"
+    
+    if not any(char.isdigit() for char in text):
+        return "[CONFIDENTIAL KEYWORD]"
+
+    if len(text)>4:
+        return "*" * (len(text) - 4) + text[-4:]
+    return "****"
+    
+
+
+def request(flow: http.HTTPFlow):
 
     content = flow.request.text
     if not content:
@@ -37,19 +50,23 @@ def data_hook(flow: http.HTTPFlow):
     target_domain = flow.request.pretty_host
     if target_domain in LLM_DOMAINS:
         detected = False
+        mathced_info = "None"
         for pattern in vulnerable_data:
-            if re.search(pattern,content):
+            match = re.search(pattern, content)
+            if match:
                 detected = True # vulnerable data found
+                matched_info = match.group(0) # keeping what we found
                 break
+        # keeping ip
+        client_ip = flow.client_conn.peername[0] if flow.client_conn.peername else "127.0.0.1"    
         if detected :
             flow.response = http.Response.make(403,
             b"BLOCKED BY SHADOW AI GUARD: Sensitive data detected!",                                   
             {"Content-Type": "text/plain"}
             )
             action = "blocked"
-            mathced_info = "Sensitive Data"
+            matched_info = mask_sensitive_data(matched_info)
         else:
             action = "allowed" # no sensitive data detected so the text can pass
             mathced_info = "None"  
-            
-#Μενει η αποστολή του log στον admin 2
+        database.add_log(client_ip, target_domain, action, matched_info)    
