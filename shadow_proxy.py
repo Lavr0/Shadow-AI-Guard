@@ -1,6 +1,7 @@
 from mitmproxy import http
 import database,requests,re
 
+database.init_db()
 '''list of patterns that are considered vulnerable data'''
 vulnerable_data = [
     r"AFM",
