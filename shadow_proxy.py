@@ -56,9 +56,10 @@ def ai_scan(text_to_check):
                 "prompt": prompt,
                 "stream": False
             },
-            timeout = 3 # Για διαχειρηση της κίνησης
+            timeout = 15 # Για διαχειρηση της κίνησης
         )
         result = response.json().get("response", "").strip().upper()
+        print(f"--> [OLLAMA RAW RESPONSE]: {result}")
         return "YES" in result
     except Exception as e:
         print(f"Ollama check failed: {e}")
@@ -67,7 +68,7 @@ def ai_scan(text_to_check):
 
 
 def request(flow: http.HTTPFlow):
-
+    print(f"--> DOMAIN: {flow.request.pretty_host} | CONTENT: {flow.request.text}") # <-- Πρόσθεσε αυτό εδώ
     content = flow.request.text
     if not content:
         return
