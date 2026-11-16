@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadow AI Guard - Live Dashboard</title>
-    <!-- Google Fonts & Tailwind CSS CDN για γρήγορο και ωραίο design -->
+    <!-- Google Fonts & Tailwind CSS CDN -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -27,15 +27,15 @@
     <!-- Main Content -->
     <main class="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
 
-        <!-- Metrics Cards -->
+        <!-- Metrics Cards (Δυναμικά από τη Python) -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow">
                 <p class="text-sm text-slate-400 font-medium">Συνολικά Αιτήματα</p>
-                <h3 id="total-requests" class="text-3xl font-bold mt-2 text-white">1,248</h3>
+                <h3 id="total-requests" class="text-3xl font-bold mt-2 text-white">{{ total }}</h3>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow">
                 <p class="text-sm text-slate-400 font-medium">Μπλοκαρισμένα (Data Leaks)</p>
-                <h3 id="blocked-requests" class="text-3xl font-bold mt-2 text-rose-500">42</h3>
+                <h3 id="blocked-requests" class="text-3xl font-bold mt-2 text-rose-500">{{ blocked }}</h3>
             </div>
             <div class="bg-slate-900 border border-slate-800 p-5 rounded-xl shadow">
                 <p class="text-sm text-slate-400 font-medium">AI Engine (Ollama phi3)</p>
@@ -47,9 +47,6 @@
         <div class="bg-slate-900 border border-slate-800 rounded-xl shadow overflow-hidden">
             <div class="p-5 border-b border-slate-800 flex justify-between items-center">
                 <h2 class="text-lg font-semibold text-slate-200">Ζωντανά Logs Κίνησης (Proxy Stream)</h2>
-                <button onclick="addSimulatedLog()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition shadow">
-                    + Προσομοίωση Νέου Αιτήματος
-                </button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
@@ -63,28 +60,26 @@
                         </tr>
                     </thead>
                     <tbody id="log-table-body" class="divide-y divide-slate-800 text-sm">
-                        <!-- Dynamic Rows will be injected here -->
+                        <!-- Δυναμική φόρτωση των logs από τη βάση -->
+                        {% for log in logs %}
                         <tr class="hover:bg-slate-800/50 transition">
-                            <td class="py-4 px-6 text-slate-400">18:42:10</td>
-                            <td class="py-4 px-6 font-mono text-slate-300">127.0.0.1</td>
-                            <td class="py-4 px-6 text-indigo-400 font-medium">chatgpt.com</td>
-                            <td class="py-4 px-6"><span class="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">BLOCKED</span></td>
-                            <td class="py-4 px-6 text-slate-300">Regex Match (ΑΦΜ: *****6789)</td>
+                            <td class="py-4 px-6 text-slate-400">{{ log.timestamp }}</td>
+                            <td class="py-4 px-6 font-mono text-slate-300">{{ log.client_ip }}</td>
+                            <td class="py-4 px-6 text-indigo-400 font-medium">{{ log.target_domain }}</td>
+                            <td class="py-4 px-6">
+                                {% if log.action_taken == 'blocked' %}
+                                    <span class="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">BLOCKED</span>
+                                {% else %}
+                                    <span class="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">ALLOWED</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-4 px-6 text-slate-300">{{ log.matched_content }}</td>
                         </tr>
-                        <tr class="hover:bg-slate-800/50 transition">
-                            <td class="py-4 px-6 text-slate-400">18:40:15</td>
-                            <td class="py-4 px-6 font-mono text-slate-300">127.0.0.1</td>
-                            <td class="py-4 px-6 text-indigo-400 font-medium">api.openai.com</td>
-                            <td class="py-4 px-6"><span class="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">BLOCKED</span></td>
-                            <td class="py-4 px-6 text-slate-300">Ollama Semantic Match (Contextual Secret)</td>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="py-6 text-center text-slate-500">Δεν υπάρχουν καταγεγραμμένα logs ακόμα.</td>
                         </tr>
-                        <tr class="hover:bg-slate-800/50 transition">
-                            <td class="py-4 px-6 text-slate-400">18:35:00</td>
-                            <td class="py-4 px-6 font-mono text-slate-300">127.0.0.1</td>
-                            <td class="py-4 px-6 text-indigo-400 font-medium">chatgpt.com</td>
-                            <td class="py-4 px-6"><span class="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">ALLOWED</span></td>
-                            <td class="py-4 px-6 text-slate-400">None</td>
-                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -97,31 +92,5 @@
         Shadow AI Guard &bull; Hackathon Project 2026
     </footer>
 
-    <!-- JavaScript για διαδραστικότητα -->
-    <script>
-        // Συνάρτηση προσομοίωσης προσθήκης νέου log (για επίδειξη στο hackathon)
-        function addSimulatedLog() {
-            const tbody = document.getElementById('log-table-body');
-            const totalReqEl = document.getElementById('total-requests');
-            const blockedReqEl = document.getElementById('blocked-requests');
-
-            // Αυξάνουμε τους μετρητές
-            totalReqEl.innerText = parseInt(totalReqEl.innerText) + 1;
-            blockedReqEl.innerText = parseInt(blockedReqEl.innerText) + 1;
-
-            const now = new Date().toLocaleTimeString();
-            
-            const newRow = document.createElement('tr');
-            newRow.className = "hover:bg-slate-800/50 transition animate-fade-in";
-            newRow.innerHTML = `
-                <td class="py-4 px-6 text-slate-400">${now}</td>
-                <td class="py-4 px-6 font-mono text-slate-300">127.0.0.1</td>
-                <td class="py-4 px-6 text-indigo-400 font-medium">claude.ai</td>
-                <td class="py-4 px-6"><span class="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2.5 py-1 rounded-full text-xs font-semibold">BLOCKED</span></td>
-                <td class="py-4 px-6 text-slate-300">Ollama Semantic Match (Password Leak)</td>
-            `;
-
-            // Προσθήκη στην αρχή της λίστας
-            tbody.insertBefore(newRow, tbody.firstChild);
-        }
-    </script>
+</body>
+</html>
