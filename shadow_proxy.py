@@ -62,9 +62,17 @@ def check_prompt_async(clean_text):
     try:
         
         prompt = (
-            "Analyze the following text. Does it contain sensitive personal data (like names, phone numbers, "
-            "IDs, passwords, or financial details) or confidential company secrets? "
-            "Answer ONLY with 'YES' or 'NO'.\n\nText: " + clean_text
+            "<|system|>\n"
+            "You are ShadowGuard-AI, an aggressive and strict Data Loss Prevention (DLP) system. "
+            "Your job is to protect corporate assets and prevent any leakage of sensitive information to AI. "
+            "You must flag ANY text that mentions internal meetings, board decisions, financial plans, mergers, acquisitions, "
+            "passwords, API keys, credentials, or proprietary company information.\n<|end|>\n"
+            "<|user|>\n"
+            "Analyze the text below. Does it mention or discuss internal company matters, confidential meetings, "
+            "financial/business strategies, credentials, or restricted information?\n\n"
+            f"Text: {clean_text}\n\n"
+            "Reply with EXACTLY ONE WORD: 'YES' if it touches upon any of these, or 'NO' otherwise.\n<|end|>\n"
+            "<|assistant|>\n"
         )
         response = requests.post(
             "http://localhost:11434/api/generate",
@@ -78,7 +86,7 @@ def check_prompt_async(clean_text):
                     "num_predict": 5     #είναι ένα όριο ταχύτητας (κόφτης) που λέει στο Ollama πόσες λέξεις/κομμάτια λέξεων (tokens) το μέγιστο επιτρέπεται να παράγει στην απάντησή του
                 }
             },
-            timeout=30  
+            timeout=60  
         )
         result = response.json().get("response", "").strip().upper()
         print(f"--> [OLLAMA RAW RESPONSE]: {result}")
