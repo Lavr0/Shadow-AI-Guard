@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -12,11 +10,17 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shadow_user -d shadow_ai_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: always
 
   app:
     build: .
     container_name: shadow-guard-app
+    command: mitmdump -s shadow_proxy.py --set block_global=false --listen-host 0.0.0.0 --listen-port 8080 --ssl-insecure
     ports:
       - "8080:8080"
       - "5000:5000"
@@ -28,9 +32,10 @@ services:
       - DB_PORT=5432
     volumes:
       - .:/app
-      - ./.mitmproxy:/root/.mitmproxy   # <-- Προσθήκη αυτού του volume για να φορτώνει τα πιστοποιητικά
+      - ./.mitmproxy:/root/.mitmproxy
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: always
 
 volumes:
