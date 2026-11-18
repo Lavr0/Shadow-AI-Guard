@@ -1,5 +1,6 @@
 from mitmproxy import http
-import database,requests,re,threading,json
+import database,requests,re,threading,json,base64
+import urllib.parse
 
 database.init_db()
 '''list of patterns that are considered vulnerable data'''
@@ -23,6 +24,7 @@ LLM_DOMAINS = [
     "api.anthropic.com",
     "claude.ai",
     "generativelanguage.googleapis.com",
+    "geminiweb-pa.clients6.google.com",
     "api.deepseek.com",
     "chatgpt.com",
     "chatgpt.com",
@@ -40,9 +42,33 @@ def mask_sensitive_data(text):      # hides sensitive data,leaving only 4 last s
     if len(text)>4:
         return "*" * (len(text) - 4) + text[-4:]
     return "****"
+
+def utf_sequence(blob: bytes) -> str:
+    text= blob.decode("utf-8", errors="ignore")
+    chunk= re.findall(r"[^\x00-\x1f\x7f-\x9f]{3,}", text)
+    return " ".join(chunk)
+
+def unwrap_text(obj,out):
+    if isinstance(obj,str):
+        stripped_text=obj.strip()
+        if (stripped_text[0]=="{" and stripped_text[-1]=="}") or (stripped_text[0]=="[" and stripped_text[-1]=="]"):
+            try :
+                unwrap_text(json.loads(stripped_text),out)
+                return
+            except Exception:
+                pass
+            out.append(obj)
+    elif isinstance(obj,list):
+        for i in obj:
+            unwrap_text(i,out)
+    elif isinstance(obj,dict):
+        for j in obj.values:
+            unwrap_text(j,out)
     
 def extract_clean_text(raw_content):
     """Επιστρέφει ΜΟΝΟ το καθαρό κείμενο του χρήστη από έγκυρο JSON συνομιλίας. Αλλιώς None."""
+    if isinstance(raw_content,bytes):
+        raw_content = raw_content.decode('utf-8', errors="ignore")
     try:
         data = json.loads(raw_content)    #Προσπαθεί να μετατρέψει το ακατέργαστο σώμα του αιτήματος (raw_content) από απλό κείμενο σε λεξικό (dictionary) της Python, ελέγχοντας αν έχει έγκυρη δομή JSON
         if isinstance(data, dict) and "messages" in data and isinstance(data["messages"], list):    #Ελέγχει αν το JSON περιέχει τη λίστα "messages"
@@ -51,12 +77,44 @@ def extract_clean_text(raw_content):
             text_parts = [p for p in parts if isinstance(p, str)]           #Φιλτράρει τα στοιχεία της λίστας parts και κρατάει μόνο όσα είναι καθαρό κείμενο (str), αγνοώντας τυχόν εικόνες ή συνημμένα αρχεία που μπορεί να βρίσκονται στην ίδια λίστα.
             if text_parts:
                 return " ".join(text_parts)                                 #Ενώνει τα κομμάτια κειμένου σε μία ενιαία, καθαρή πρόταση και την επιστρέφει για να ελεγχθεί από τα Regex και το Ollama
+        #Extra Parsing if the first JSON check fails
+        text_parts = []
+        unwrap_text(data, text_parts)
+        if text_parts:
+            return " ".join(text_parts)
     except Exception:
         pass
     
     # Αν ΔΕΝ είναι έγκυρο JSON με "messages" (π.χ. συμπιεσμένα bytes ή telemetry), το αγνοούμε!
-    return None
 
+    #Extra condition specifically for Gemini Because it uses multiple layers
+    try:
+        parsed=urllib.parse.parse_qs(raw_content)
+        #Modern Gemini
+        req_values =[
+            val[0] for key, val in parsed.items()
+            if key.startswith("req") and key.endswith("___data__") and val
+        ]
+        if req_values:
+            extracted =[]
+            for item in req_values:
+                try:
+                    decoded=base64.b64decode(item, validate=True)
+                except Exception:
+                    decoded = item.encode("utf-8", errors="ignore")
+                extracted.append(utf_sequence(decoded))
+            combined= " ".join(extracted).strip()
+            if combined:
+                return combined
+        #legacy Gemini
+        if "f.req" in parsed:
+            outer =json.loads(parsed["f.req"][0])
+            text_parts = []
+            unwrap_text(outer,text_parts)
+            return " ".join(text_parts)
+    except Exception:
+        pass
+    return None
 
 def check_prompt_async(clean_text):
     try:
