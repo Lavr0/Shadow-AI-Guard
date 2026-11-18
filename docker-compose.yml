@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: shadow-postgres
+    environment:
+      POSTGRES_DB: shadow_ai_db
+      POSTGRES_USER: shadow_user
+      POSTGRES_PASSWORD: shadow_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  app:
+    build: .
+    container_name: shadow-guard-app
+    ports:
+      - "8080:8080"
+      - "5000:5000"
+    environment:
+      - DB_HOST=db
+      - DB_NAME=shadow_ai_db
+      - DB_USER=shadow_user
+      - DB_PASSWORD=shadow_password
+      - DB_PORT=5432
+    volumes:
+      - .:/app
+      - ./.mitmproxy:/root/.mitmproxy   # <-- Προσθήκη αυτού του volume για να φορτώνει τα πιστοποιητικά
+    depends_on:
+      - db
+    restart: always
+
+volumes:
+  postgres_data:

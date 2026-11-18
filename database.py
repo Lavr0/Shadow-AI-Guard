@@ -1,13 +1,14 @@
 import psycopg2
+import os
 
-# Ρυθμίσεις σύνδεσης στην PostgreSQL
 DB_CONFIG = {
-    "dbname": "admin_logs",
-    "user": "postgres",
-    "password": "hackathon",  
-    "host": "localhost",
-    "port": "5432"
+    "dbname": os.getenv("DB_NAME", "shadow_ai_db"),
+    "user": os.getenv("DB_USER", "shadow_user"),
+    "password": os.getenv("DB_PASSWORD", "shadow_password"),
+    "host": os.getenv("DB_HOST", "db"),  # Εδώ το "db" είναι το όνομα της υπηρεσίας στο docker-compose!
+    "port": os.getenv("DB_PORT", "5432")
 }
+
 
 def init_db():
     conn = psycopg2.connect(**DB_CONFIG)
