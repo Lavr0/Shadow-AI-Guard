@@ -1,18 +1,25 @@
 @echo off
-echo Εκκινηση ολων των υπηρεσιων του Shadow-AI-Guard...
+cd /d "%~dp0"
+echo ========================================================
+echo Starting Shadow AI Guard Ecosystem...
+echo ========================================================
 
-:: 1. Ξεκινάει το Ollama σε ξεχωριστό παράθυρο
-start "Ollama Service" cmd /k "ollama serve"
+:: 1. Ξεκινάει το Ollama
+echo [1/3] Starting Ollama server...
+start cmd /k "ollama serve"
 
-:: 2. Ξεκινάει ο Flask Server (admin_server.py) σε ξεχωριστό παράθυρο
-start "Flask Dashboard" cmd /k "python admin_server.py"
+:: Δίνουμε 3 δευτερόλεπτα να σηκωθεί το Ollama
+timeout /t 3 >nul
 
-:: 3. Ξεκινάει το Mitmproxy με το shadow_proxy.py σε ξεχωριστό παράθυρο
-start "Mitmproxy Guard" cmd /k "python -m mitmproxy.tools.main -p 8080 -s shadow_proxy.py"
+:: 2. Ξεκινάει το Dashboard (admin_server.py)
+echo [2/3] Starting Dashboard (admin_server.py)...
+start cmd /k "python admin_server.py"
 
-:: 4. Ανοίγει αυτόματα και το δικό σου .exe (Άλλαξε το "to_programa.exe" με το πραγματικό όνομα του αρχείου σου)
-start "admin_server.py"
+:: 3. Ξεκινάει το mitmproxy με το shadow_proxy.py
+echo [3/3] Starting mitmproxy...
+start cmd /k "C:\Users\lampr\AppData\Local\Python\pythoncore-3.15-64\Scripts\mitmdump.exe -s shadow_proxy.py --set ssl_insecure=true"
 
-echo.
-echo Ολα τα συστηματα ξεκινησαν επιτυχως!
+echo ========================================================
+echo Όλες οι υπηρεσίες ξεκίνησαν!
+echo ========================================================
 pause

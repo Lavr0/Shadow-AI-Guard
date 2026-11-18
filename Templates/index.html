@@ -91,6 +91,53 @@
     <footer class="bg-slate-900 border-t border-slate-800 py-4 text-center text-xs text-slate-500">
         Shadow AI Guard &bull; Hackathon Project 2026
     </footer>
+    <!-- Script για ηχητική ειδοποίηση σε πραγματικό χρόνο -->
+<script>
+        let lastBlockedCount = null;
 
+        // Ζητάμε άδεια για Notifications μόλις ανοίξει η σελίδα
+        if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+            Notification.requestPermission();
+        }
+
+        function pollNewLogs() {
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    const blockedElem = doc.getElementById('blocked-requests');
+                    if (blockedElem) {
+                        const currentBlockedCount = parseInt(blockedElem.textContent.trim()) || 0;
+                        
+                        if (lastBlockedCount === null) {
+                            lastBlockedCount = currentBlockedCount;
+                        } 
+                        else if (currentBlockedCount > lastBlockedCount) {
+                            // ΕΓΙΝΕ NEW BLOCK -> Εμφάνιση ειδοποίησης browser!
+                            showBrowserNotification();
+                            lastBlockedCount = currentBlockedCount;
+                            
+                            // Απαλή ανανέωση της σελίδας μετά από 1 δευτερόλεπτο για να φανεί το log
+                            setTimeout(() => { window.location.reload(); }, 1000);
+                        }
+                    }
+                })
+                .catch(err => console.log("Polling error:", err));
+        }
+
+        function showBrowserNotification() {
+            if (Notification.permission === "granted") {
+                new Notification("🚨 Shadow AI Guard - BLOCKED!", {
+                    body: "Sensitive data leak detected and blocked!",
+                    icon: "https://img.icons8.com/ios-filled/48/2563eb/shield.png" // Μπλε shield icon (ταιριάζει με το site style)
+                });
+            }
+        }
+
+        // Έλεγχος κάθε 3 δευτερόλεπτα
+        setInterval(pollNewLogs, 3000);
+    </script>
 </body>
 </html>

@@ -208,7 +208,10 @@ def request(flow: http.HTTPFlow):
             {"Content-Type": "text/plain"}
         )
         action = "blocked"
-        matched_info = mask_sensitive_data(matched_info)
+        if matched_info == "Ollama Semantic Match (Contextual PII)":
+            matched_info = "CONTEXTUAL PII LEAK"
+        else:
+            matched_info = mask_sensitive_data(matched_info)
         print(f"[BLOCKED] 🚨 Sent 403 to client for domain {target_domain}")
     else:
         action = "allowed"
