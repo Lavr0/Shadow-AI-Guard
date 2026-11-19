@@ -21,6 +21,8 @@ services:
     build: .
     container_name: shadow-guard-app
     command: mitmdump -s shadow_proxy.py --set block_global=false --listen-host 0.0.0.0 --listen-port 8080 --ssl-insecure
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
       - "5000:5000"

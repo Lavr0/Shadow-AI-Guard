@@ -215,12 +215,6 @@ def request(flow: http.HTTPFlow):
             "The transmission has been terminated for security compliance."
         )
         
-        flow.response = http.Response.make(
-            403,
-            error_message.encode("utf-8"),                             
-            {"Content-Type": "text/plain; charset=utf-8"}
-        ) 
-    
     if detected:
         flow.response = http.Response.make(
             403,
