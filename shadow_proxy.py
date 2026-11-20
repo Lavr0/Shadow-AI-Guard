@@ -17,8 +17,8 @@ vulnerable_data = [
     r"confidential",
     r"\b\d{9}\b",                                   
     r"\b(?:\d[ -]*?){13,16}\b",                       
-    r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b",
-    r"(?i)(?:key|secret|token|auth|password|passwd|pwd)\s*[:=]\s*['\"]?[a-zA-Z0-9_\-\.]{16,64}['\"]?"     
+    r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b"   ,
+         
 ]
 
 # Υποστηριζόμενα LLM Domains (Web & APIs)
@@ -33,6 +33,12 @@ LLM_DOMAINS = [
     "chat.deepseek.com",
     "gemini.google.com"
 ]
+
+IGNORE_PATH_KEYWORDS = (
+    "/prepare", "telemetry", "sentinel", "metrics",
+    "title", "feedback", "bootstrap", "settings", "account"
+)
+
 
 def mask_sensitive_data(text):
     if not text or text == "None":
@@ -76,16 +82,62 @@ def unwrap_text(obj, found_texts):
             if k not in ignore_keys:
                 unwrap_text(v, found_texts)
 
+def repair_greek_mojibake(text: str) -> str:
+    if not text:
+        return text
+    out = []
+    for ch in text:
+        # Αν είναι ήδη ελληνικός χαρακτήρας, άσ' τον όπως είναι
+        if "\u0370" <= ch <= "\u03ff" or "\u1f00" <= ch <= "\u1fff":
+            out.append(ch)
+            continue
+        # Δοκίμασε να δεις αν ο χαρακτήρας είναι mojibake byte από CP437/Latin-1
+        fixed = False
+        for enc in ("cp437", "latin-1"):
+            try:
+                b = ch.encode(enc)
+                # Κρατάμε raw bytes για να τα αποκωδικοποιήσουμε ανά ζεύγη UTF-8 παρακάτω
+                out.append(b)
+                fixed = True
+                break
+            except Exception:
+                continue
+        if not fixed:
+            out.append(ch)
+
+    # Συνένωσε διαδοχικά bytes και αποκωδικοποίησέ τα ως UTF-8
+    result = []
+    byte_buf = bytearray()
+
+    def flush_bytes():
+        if byte_buf:
+            result.append(byte_buf.decode("utf-8", errors="replace"))
+            byte_buf.clear()
+
+    for item in out:
+        if isinstance(item, bytes):
+            byte_buf.extend(item)
+        else:
+            flush_bytes()
+            result.append(item)
+    flush_bytes()
+    return "".join(result)
+
 def extract_clean_text(raw_content):
     """Εξάγει καθαρό κείμενο από οποιοδήποτε LLM αίτημα (JSON, URL-encoded, Gemini f.req κ.λπ.)."""
     if isinstance(raw_content, bytes):
-        raw_content = raw_content.decode('utf-8', errors="ignore")
+        raw_content = raw_content.decode('utf-8', errors="replace")
         
     found_texts = []
 
     # 1. Προσπάθεια ως standard JSON (ChatGPT, Claude, DeepSeek API/Web)
     try:
         data = json.loads(raw_content)
+        if isinstance(data, dict):
+            for key in ("prompt", "text", "message", "content", "query"):
+                val = data.get(key)
+                if isinstance(val, str) and val.strip():
+                    found_texts.append(val.strip())
         unwrap_text(data, found_texts)
     except Exception:
         pass
@@ -104,7 +156,7 @@ def extract_clean_text(raw_content):
                 try:
                     decoded = base64.b64decode(item, validate=True)
                 except Exception:
-                    decoded = item.encode("utf-8", errors="ignore")
+                    decoded = item.encode("utf-8", errors="replace")
                 found_texts.append(utf_sequence(decoded))
                 
         # Legacy Gemini (f.req)
@@ -118,22 +170,41 @@ def extract_clean_text(raw_content):
     if not found_texts:
         return None
 
-    # Ενώνουμε τα μοναδικά κείμενα και κρατάμε τους τελευταίους 1500 χαρακτήρες για να μη χάνουμε το μήνυμα
-    combined = " ".join(dict.fromkeys(found_texts))
-    return combined[-1500:]
+    
+    joined=" ".join(dict.fromkeys(found_texts))
+    return repair_greek_mojibake(joined)
 
 def check_prompt_async(clean_text):
     try:
+        fixed_text = repair_greek_mojibake(clean_text)
+
+        noise_markers = [
+            "Create a doc, or apply several operations",
+            "Claude Docs Create one object",
+            "Short snake_case identifier"
+        ]
+        cleaned_for_llm = fixed_text
+        for marker in noise_markers:
+            if marker in cleaned_for_llm:
+                cleaned_for_llm = cleaned_for_llm.split(marker, 1)[0]
+
+        target_text = cleaned_for_llm.strip()[:1500]
+        print(f"\n[DEBUG OLLAMA INPUT] total={len(clean_text)} | head={target_text[:400]}")
         prompt = (
             "<|system|>\n"
             "You are ShadowGuard-AI, an aggressive and strict Data Loss Prevention (DLP) system. "
             "Your job is to protect corporate assets and prevent any leakage of sensitive information to AI. "
             "You must flag ANY text that mentions internal meetings, board decisions, financial plans, mergers, acquisitions, "
-            "passwords, API keys, credentials, personal names, home addresses, or proprietary company information.\n<|end|>\n"
+            "passwords, API keys, credentials, personal names, home addresses, or proprietary company information, "
+            "as well as phone numbers, mobile numbers, street addresses, and residential addresses.\n<|end|>\n"
             "<|user|>\n"
             "Analyze the text below. Does it mention or discuss internal company matters, confidential meetings, "
-            "financial/business strategies, credentials, personal identifiable information (PII), or restricted information?\n\n"
-            f"Text: {clean_text}\n\n"
+            "financial/business strategies, credentials, personal identifiable information (PII), or restricted information, "
+            "including phone numbers, street addresses, or home addresses?\n\n"
+            "Examples:\n"
+            "- 'Call John Doe at 6912345678 or visit 10 Panepistimiou.' -> YES\n"
+            "- 'Write a python function to sort a list.' -> NO\n\n"
+            f"Text: {target_text}\n\n"
             "Reply with EXACTLY ONE WORD: 'YES' if it touches upon any of these, or 'NO' otherwise.\n<|end|>\n"
             "<|assistant|>\n"
         )
@@ -171,9 +242,11 @@ def request(flow: http.HTTPFlow):
         return
 
     # 3. Αγνοούμε βοηθητικά endpoints
-    path = flow.request.path
-    if "/prepare" in path or "telemetry" in path or "sentinel" in path or "metrics" in path:
+    path = flow.request.path or ""
+    path_lower = path.lower()
+    if any(k in path_lower for k in IGNORE_PATH_KEYWORDS):
         return
+
 
     # 4. Ανάγνωση περιεχομένου
     content = flow.request.get_text(strict=False)
@@ -185,7 +258,7 @@ def request(flow: http.HTTPFlow):
     if not clean_text or not clean_text.strip():
         return
 
-    print(f"\n--> [REAL MESSAGE CAPTURED] Domain: {target_domain} | Text: {clean_text}")
+    print(f"\n--> [CHAT POST CAPTURED] Domain: {target_domain} | Path: {path} | Text: {clean_text[-300:]}")
     
     detected = False
     matched_info = "None"
@@ -194,8 +267,7 @@ def request(flow: http.HTTPFlow):
     for pattern in vulnerable_data:
         match = re.search(pattern, clean_text, re.IGNORECASE)
         if match:
-            detected = Type = True # fixed bool assign
-            detected = True
+            detected = True # fixed bool assign
             matched_info = match.group(0)
             break
             
@@ -205,20 +277,12 @@ def request(flow: http.HTTPFlow):
             detected = True
             matched_info = "Ollama Semantic Match (Contextual PII)"
             
-    client_ip = flow.client_conn.peername[0] if flow.client_conn.peername else "127.0.0.1"   
-
-    if detected:
-        # Ενιαίο μήνυμα σφάλματος για όλα τα ΑΙ συστήματα
-        error_message = (
-            "🚨 [SHADOW AI GUARD]: Request Blocked! "
-            "Sensitive or confidential corporate data was detected in your prompt. "
-            "The transmission has been terminated for security compliance."
-        )
-        
+    client_ip = flow.client_conn.peername[0] if flow.client_conn.peername else "127.0.0.1"    
+    
     if detected:
         flow.response = http.Response.make(
             403,
-            b"BLOCKED BY SHADOW AI GUARD: Sensitive data detected!",
+            b"BLOCKED BY SHADOW AI GUARD: Sensitive data detected!",                             
             {"Content-Type": "text/plain"}
         )
         action = "blocked"
@@ -229,6 +293,6 @@ def request(flow: http.HTTPFlow):
         print(f"[BLOCKED] 🚨 Sent 403 to client for domain {target_domain}")
     else:
         action = "allowed"
-        matched_info = "None"
+        matched_info = "None"  
         
     database.add_log(client_ip, target_domain, action, matched_info)
