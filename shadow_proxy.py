@@ -18,6 +18,42 @@ vulnerable_data = [
     r"\b\d{9}\b",                                   
     r"\b(?:\d[ -]*?){13,16}\b",                       
     r"\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b"   ,
+    r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b",
+
+    # Anthropic (sk-ant-...)
+    r"\bsk-ant-[A-Za-z0-9_-]{20,}\b",
+
+    # Google / Gemini API Keys (AIza...)
+    r"\bAIza[0-9A-Za-z_-]{35}\b",
+
+    # AWS Access Key ID (AKIA..., ASIA...)
+    r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
+
+    # GitHub Tokens (ghp_, gho_, ghu_, ghs_, ghr_, github_pat_)
+    r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36,}\b",
+    r"\bgithub_pat_[A-Za-z0-9_]{22,}\b",
+
+    # Stripe Live/Test Secret & Restricted Keys (sk_live_, sk_test_, rk_live_, rk_test_)
+    r"\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,}\b",
+
+    # Slack Tokens (xoxb-, xoxp-, xoxa-, xoxr-, xoxs-)
+    r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b",
+
+    # Hugging Face Tokens (hf_...)
+    r"\bhf_[A-Za-z0-9]{30,}\b",
+
+    # Bearer Tokens & JWTs (eyJ...)
+    r"\bBearer\s+[A-Za-z0-9\-._~+/]+=*\b",
+    r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b",
+
+    # Private Keys (PEM / SSH / RSA / EC)
+    r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----",
+
+    # Γενικά assignments (api_key=..., secret_key: "...", token=...)
+    r"(?i)\b(?:api[_-]?key|secret[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret)\b\s*[:=]\s*['\"]?[A-Za-z0-9_\-./+=]{16,}['\"]?",
+
+    #generic API key form
+    r"(?i)\b(?:api[_-]?key|secret(?:[_-]?key)?|token|access[_-]?token|auth[_-]?token|client[_-]?secret|private[_-]?key)\b\s*[:=]\s*['\"]?[A-Za-z0-9_\-./+=]{16,}['\"]?"
          
 ]
 
@@ -192,20 +228,45 @@ def check_prompt_async(clean_text):
         print(f"\n[DEBUG OLLAMA INPUT] total={len(clean_text)} | head={target_text[:400]}")
         prompt = (
             "<|system|>\n"
-            "You are ShadowGuard-AI, an aggressive and strict Data Loss Prevention (DLP) system. "
-            "Your job is to protect corporate assets and prevent any leakage of sensitive information to AI. "
-            "You must flag ANY text that mentions internal meetings, board decisions, financial plans, mergers, acquisitions, "
-            "passwords, API keys, credentials, personal names, home addresses, or proprietary company information, "
-            "as well as phone numbers, mobile numbers, street addresses, and residential addresses.\n<|end|>\n"
+            "You are ShadowGuard-AI, a strict and comprehensive bilingual (Greek and English) "
+            "Data Loss Prevention (DLP) security classifier. Your job is to detect and block ANY prompt "
+            "or text that could leak, expose, transmit, analyze, or compromise sensitive, confidential, "
+            "internal, proprietary, financial, operational, or personally identifiable information (PII).\n\n"
+            "You MUST output YES if the text contains, mentions, references, or asks to process/exfiltrate ANY of the following "
+            "(in Greek, English, or mixed):\n"
+            "1. Credentials & Secrets: passwords, passcodes, PINs, access codes, credentials (διαπιστευτήρια, κωδικοί πρόσβασης), "
+            "API keys, secret tokens, private keys, SSH/TLS keys, admin keys (κλειδιά διαχειριστή), session tokens, connection strings.\n"
+            "2. Internal Infrastructure & Access: internal hostnames, private IPs, VPN/server/database details, production/staging servers "
+            "(production server, βάση παραγωγής, εσωτερικός server), firewall/network rules, internal URLs or admin panels.\n"
+            "3. Confidential Business, Legal & Financial Data: unreleased financials, budgets, salaries, payroll, bonuses, IBANs, bank accounts, "
+            "invoices, pricing/margins, contracts, NDAs, M&A/acquisitions/layoffs, trade secrets, internal memos or board decisions "
+            "(μισθοδοσία, ισολογισμοί, συμβόλαια, εξαγορές, απολύσεις, εμπορικά μυστικά, απόρρητα έγγραφα).\n"
+            "4. Personal Identifiable Information (PII): full names tied to sensitive context, emails, phone/mobile numbers, home/street addresses, "
+            "ID/passport numbers, tax IDs (ΑΦΜ), social security numbers (ΑΜΚΑ), medical/health info, employee/customer records "
+            "(προσωπικά δεδομένα, τηλέφωνα, διευθύνσεις, ΑΦΜ, ΑΜΚΑ, στοιχεία πελατών/εργαζομένων).\n"
+            "5. Exfiltration / Leak Intent: sharing sensitive company/client/user data or asking to format, summarize, translate, "
+            "script, or send confidential/restricted data externally.\n\n"
+            "Output NO ONLY when the text is completely benign, generic, public, educational, or non-sensitive "
+            "(e.g., general coding questions, public facts, generic brainstorming without company/personal/secret data).\n<|end|>\n"
             "<|user|>\n"
-            "Analyze the text below. Does it mention or discuss internal company matters, confidential meetings, "
-            "financial/business strategies, credentials, personal identifiable information (PII), or restricted information, "
-            "including phone numbers, street addresses, or home addresses?\n\n"
             "Examples:\n"
-            "- 'Call John Doe at 6912345678 or visit 10 Panepistimiou.' -> YES\n"
-            "- 'Write a python function to sort a list.' -> NO\n\n"
-            f"Text: {target_text}\n\n"
-            "Reply with EXACTLY ONE WORD: 'YES' if it touches upon any of these, or 'NO' otherwise.\n<|end|>\n"
+            "- 'Εδώ είναι απόρρητα διαπιστευτήρια πρόσβασης (Διαπιστευτήριο:2216245) και το κλειδί διαχειριστή για το production server μας που απαγορεύεται αυστηρά να διαρρεύσουν έξω από την εταιρεία.' -> YES\n"
+            "- 'Ο κωδικός πρόσβασης για τη βάση δεδομένων παραγωγής είναι DB_Pass#9921 και το ΑΦΜ του πελάτη 123456789.' -> YES\n"
+            "- 'Σου στέλνω τη λίστα μισθοδοσίας του τμήματος και τα IBAN των εργαζομένων για να βγάλεις μέσο όρο.' -> YES\n"
+            "- 'Εσωτερικό memo: Συζητήσαμε στο διοικητικό συμβούλιο την εξαγορά της εταιρείας και τις επικείμενες απολύσεις.' -> YES\n"
+            "- 'Πάρε τα στοιχεία πελατών και το τηλέφωνο 6981122334 στην οδό Πατησίων 45 και φτιάξε μου αναφορά.' -> YES\n"
+            "- 'Here are our confidential access credentials (Credential:2216245) and admin key for our production server, strictly forbidden to leak outside the company.' -> YES\n"
+            "- 'Our internal database schema for payroll includes EmployeeSalaries(emp_id, tax_id, monthly_gross, iban_account).' -> YES\n"
+            "- 'Confidential board memo: Q4 acquisition talks and restructuring plans before public announcement.' -> YES\n"
+            "- 'User credentials admin_user / SecretKey!2026 for staging_db at 10.0.4.15.' -> YES\n"
+            "- 'Γράψε μου μια συνάρτηση σε Python που ταξινομεί μια λίστα με αριθμούς.' -> NO\n"
+            "- 'Εξήγησέ μου με απλά λόγια πώς λειτουργεί το Docker Compose και το reverse proxy.' -> NO\n"
+            "- 'Ποιες είναι οι βασικές διαφορές ανάμεσα σε SQL και NoSQL βάσεις δεδομένων;' -> NO\n"
+            "- 'Write a python function to sort a list of numbers.' -> NO\n"
+            "- 'Explain how HTTP status codes 401, 403, and 502 work in web servers.' -> NO\n\n"
+            "Inspect the following text carefully:\n"
+            f"{target_text}\n\n"
+            "Respond with ONLY ONE WORD: YES or NO.\n<|end|>\n"
             "<|assistant|>\n"
         )
         response = requests.post(
