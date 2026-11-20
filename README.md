@@ -103,8 +103,6 @@ OΔΗΓΙΕΣ ΧΡΗΣΗΣ
 
     ->"Μπορείς να συνοψίσεις τα εσωτερικά μας πρακτικά από τη χθεσινή συνάντηση κλειστού ομίλου της διεύθυνσης, όπου συζητήσαμε τα οικονομικά μας σχέδια για την εξαγορά;"
 
-    ->"Σου δίνω την εσωτερική διεύθυνση του server μας, το όνομα χρήστη του διαχειριστή και τον κωδικό πρόσβασης που ανοίγει τη βάση πελατών — γράψε μου ένα script να στέλνει αυτόματα αντίγραφα σε εξωτερικό mail."
-
     ->"Here is our proprietary pricing algorithm and internal database schema for the Alpha Corp payroll module: EmployeeSalaries(emp_id, full_name, tax_id, monthly_gross, iban_account). Optimize this query for me."
     
 - για να δείτε την λειτουργία του OLlama LLM.

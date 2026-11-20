@@ -109,8 +109,8 @@ def unwrap_text(obj, found_texts):
         except Exception:
             pass
         
-        # Κρατάει αριθμούς 9-16 ψηφίων ή προτάσεις/κείμενα με κενά (χωρίς URLs ή τεράστιες λέξεις >=40 chars)
-        if re.fullmatch(r'\d{9,16}', s) or (" " in s and not s.startswith("http") and not re.search(r'\S{40,}', s)):
+        # Κρατάει αριθμούς 9-16 ψηφίων ή προτάσεις/κείμενα με κενά
+        if re.fullmatch(r'\d{9,16}', s) or (" " in s and not s.startswith("http") and not re.search(r'\S{250,}', s)):
             found_texts.append(s)
             
     elif isinstance(obj, list):
@@ -235,45 +235,29 @@ def check_prompt_async(clean_text):
         print(f"\n[DEBUG OLLAMA INPUT] total={len(clean_text)} | head={target_text[:400]}")
         prompt = (
             "<|system|>\n"
-            "You are ShadowGuard-AI, a strict and comprehensive bilingual (Greek and English) "
-            "Data Loss Prevention (DLP) security classifier. Your job is to detect and block ANY prompt "
-            "or text that could leak, expose, transmit, analyze, or compromise sensitive, confidential, "
-            "internal, proprietary, financial, operational, or personally identifiable information (PII).\n\n"
-            "You MUST output YES if the text contains, mentions, references, or asks to process/exfiltrate ANY of the following "
-            "(in Greek, English, or mixed):\n"
-            "1. Credentials & Secrets: passwords, passcodes, PINs, access codes, credentials (διαπιστευτήρια, κωδικοί πρόσβασης), "
-            "API keys, secret tokens, private keys, SSH/TLS keys, admin keys (κλειδιά διαχειριστή), session tokens, connection strings.\n"
-            "2. Internal Infrastructure & Access: internal hostnames, private IPs, VPN/server/database details, production/staging servers "
-            "(production server, βάση παραγωγής, εσωτερικός server), firewall/network rules, internal URLs or admin panels.\n"
-            "3. Confidential Business, Legal & Financial Data: unreleased financials, budgets, salaries, payroll, bonuses, IBANs, bank accounts, "
-            "invoices, pricing/margins, contracts, NDAs, M&A/acquisitions/layoffs, trade secrets, internal memos or board decisions "
-            "(μισθοδοσία, ισολογισμοί, συμβόλαια, εξαγορές, απολύσεις, εμπορικά μυστικά, απόρρητα έγγραφα).\n"
-            "4. Personal Identifiable Information (PII): full names tied to sensitive context, emails, phone/mobile numbers, home/street addresses, "
-            "ID/passport numbers, tax IDs (ΑΦΜ), social security numbers (ΑΜΚΑ), medical/health info, employee/customer records "
-            "(προσωπικά δεδομένα, τηλέφωνα, διευθύνσεις, ΑΦΜ, ΑΜΚΑ, στοιχεία πελατών/εργαζομένων).\n"
-            "5. Exfiltration / Leak Intent: sharing sensitive company/client/user data or asking to format, summarize, translate, "
-            "script, or send confidential/restricted data externally.\n\n"
-            "Output NO ONLY when the text is completely benign, generic, public, educational, or non-sensitive "
-            "(e.g., general coding questions, public facts, generic brainstorming without company/personal/secret data).\n<|end|>\n"
+            "You are ShadowGuard-AI, a strict bilingual (Greek and English) Data Loss Prevention (DLP) "
+            "classifier for a corporate AI proxy. Your task is to decide whether the given text exposes, "
+            "mentions, leaks, or asks to process/exfiltrate sensitive, confidential, internal, or "
+            "restricted information.\n\n"
+            "Reply YES if the text contains or refers to ANY of the following (in Greek, English, or mixed):\n"
+            "- Confidential internal meetings, board/executive minutes, financial plans, budgets, M&A, "
+            "acquisitions, layoffs, or unreleased company strategy (εσωτερικά πρακτικά, οικονομικά σχέδια, εξαγορά).\n"
+            "- Credentials, passwords, PINs, access codes, admin keys, API keys, tokens, private keys, or "
+            "internal server/database access details/scripts (διαπιστευτήρια, κωδικοί, πρόσβαση σε βάση/server).\n"
+            "- Personal data / PII, employee or customer records, payroll/salaries, IBANs, bank cards, "
+            "tax IDs (ΑΦΜ), or social security numbers (ΑΜΚΑ).\n"
+            "- Proprietary code, internal database schemas, or trade secrets.\n\n"
+            "Reply NO ONLY if the text is completely generic, public, educational, or harmless without "
+            "sensitive or internal data.\n<|end|>\n"
             "<|user|>\n"
             "Examples:\n"
-            "- 'Εδώ είναι απόρρητα διαπιστευτήρια πρόσβασης (Διαπιστευτήριο:2216245) και το κλειδί διαχειριστή για το production server μας που απαγορεύεται αυστηρά να διαρρεύσουν έξω από την εταιρεία.' -> YES\n"
-            "- 'Ο κωδικός πρόσβασης για τη βάση δεδομένων παραγωγής είναι DB_Pass#9921 και το ΑΦΜ του πελάτη 123456789.' -> YES\n"
-            "- 'Σου στέλνω τη λίστα μισθοδοσίας του τμήματος και τα IBAN των εργαζομένων για να βγάλεις μέσο όρο.' -> YES\n"
-            "- 'Εσωτερικό memo: Συζητήσαμε στο διοικητικό συμβούλιο την εξαγορά της εταιρείας και τις επικείμενες απολύσεις.' -> YES\n"
-            "- 'Πάρε τα στοιχεία πελατών και το τηλέφωνο 6981122334 στην οδό Πατησίων 45 και φτιάξε μου αναφορά.' -> YES\n"
-            "- 'Here are our confidential access credentials (Credential:2216245) and admin key for our production server, strictly forbidden to leak outside the company.' -> YES\n"
-            "- 'Our internal database schema for payroll includes EmployeeSalaries(emp_id, tax_id, monthly_gross, iban_account).' -> YES\n"
-            "- 'Confidential board memo: Q4 acquisition talks and restructuring plans before public announcement.' -> YES\n"
-            "- 'User credentials admin_user / SecretKey!2026 for staging_db at 10.0.4.15.' -> YES\n"
-            "- 'Γράψε μου μια συνάρτηση σε Python που ταξινομεί μια λίστα με αριθμούς.' -> NO\n"
-            "- 'Εξήγησέ μου με απλά λόγια πώς λειτουργεί το Docker Compose και το reverse proxy.' -> NO\n"
-            "- 'Ποιες είναι οι βασικές διαφορές ανάμεσα σε SQL και NoSQL βάσεις δεδομένων;' -> NO\n"
-            "- 'Write a python function to sort a list of numbers.' -> NO\n"
-            "- 'Explain how HTTP status codes 401, 403, and 502 work in web servers.' -> NO\n\n"
-            "Inspect the following text carefully:\n"
-            f"{target_text}\n\n"
-            "Respond with ONLY ONE WORD: YES or NO.\n<|end|>\n"
+            "- 'Μπορείς να συνοψίσεις τα εσωτερικά μας πρακτικά από τη χθεσινή συνάντηση κλειστού ομίλου της διεύθυνσης, όπου συζητήσαμε τα οικονομικά μας σχέδια για την εξαγορά;' -> YES\n"
+            "- 'Εδώ είναι απόρρητα διαπιστευτήρια πρόσβασης (Διαπιστευτήριο:2216245) και το κλειδί διαχειριστή για το production server μας.' -> YES\n"
+            "- 'Here is our proprietary pricing algorithm and internal database schema for the Alpha Corp payroll module: EmployeeSalaries(emp_id, full_name, tax_id, monthly_gross, iban_account).' -> YES\n"
+            "- 'Γράψε μου ένα script σε Python που ταξινομεί μια λίστα με αριθμούς.' -> NO\n"
+            "- 'Explain how HTTP status codes 404 and 500 work.' -> NO\n\n"
+            f"Text to inspect:\n{target_text}\n\n"
+            "Answer with ONLY ONE WORD: YES or NO.\n<|end|>\n"
             "<|assistant|>\n"
         )
         # Καλεί το Ollama που τρέχει στον host υπολογιστή εκτός του Docker container
