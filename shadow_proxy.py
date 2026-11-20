@@ -1,7 +1,8 @@
 from mitmproxy import http
-import database, requests, re, threading, json, base64
+import database, requests, re, json, base64
 import urllib.parse
 
+# Αρχικοποιεί τη βάση δεδομένων (δημιουργεί πίνακες αν δεν υπάρχουν)
 database.init_db()
 
 # Λίστα με τα patterns ευαίσθητων δεδομένων (Regex)
@@ -70,6 +71,7 @@ LLM_DOMAINS = [
     "gemini.google.com"
 ]
 
+# Λέξεις-κλειδιά σε paths που αφορούν βοηθητικά/τηλεμετρικά αιτήματα και αγνοούνται
 IGNORE_PATH_KEYWORDS = (
     "/prepare", "telemetry", "sentinel", "metrics",
     "title", "feedback", "bootstrap", "settings", "account"
@@ -86,17 +88,19 @@ def mask_sensitive_data(text):
     return "****"
 
 def utf_sequence(blob: bytes) -> str:
+    # Αποκωδικοποιεί τα bytes ως UTF-8 αγνοώντας άκυρα bytes
     text = blob.decode("utf-8", errors="ignore")
+    # Κρατάει εκτυπώσιμα κομμάτια κειμένου μήκους τουλάχιστον 3 χαρακτήρων
     chunk = re.findall(r"[^\x00-\x1f\x7f-\x9f]{3,}", text)
     return " ".join(chunk)
 
 def unwrap_text(obj, found_texts):
-    """Universal αναδρομικός αποσυσκευαστής για οποιοδήποτε JSON (ChatGPT, Claude, DeepSeek, Gemini)."""
+    # Κλειδιά metadata/IDs που συνήθως δεν περιέχουν το μήνυμα του χρήστη
     ignore_keys = {"id", "conversation_id", "parent_message_id", "message_id", "timezone", "model", "p", "token", "role", "finish_reason", "index", "metadata"}
     
     if isinstance(obj, str):
         s = obj.strip()
-        # Αν το string είναι εμφωλευμένο JSON (όπως στο f.req του Gemini), το ανοίγουμε αναδρομικά
+        # Αν το string είναι στην πραγματικότητα άλλο JSON (π.χ. στο f.req του Gemini), το ανοίγει ξανά
         try:
             parsed = json.loads(s)
             if isinstance(parsed, (dict, list)):
@@ -105,15 +109,17 @@ def unwrap_text(obj, found_texts):
         except Exception:
             pass
         
-        # Κρατάμε καθαρούς αριθμούς (ΑΦΜ, τηλέφωνα, κάρτες) ή κανονικές φράσεις με κενά
+        # Κρατάει αριθμούς 9-16 ψηφίων ή προτάσεις/κείμενα με κενά (χωρίς URLs ή τεράστιες λέξεις >=40 chars)
         if re.fullmatch(r'\d{9,16}', s) or (" " in s and not s.startswith("http") and not re.search(r'\S{40,}', s)):
             found_texts.append(s)
             
     elif isinstance(obj, list):
+        # Επισκέπτεται αναδρομικά κάθε στοιχείο της λίστας
         for item in obj:
             unwrap_text(item, found_texts)
             
     elif isinstance(obj, dict):
+        # Επισκέπτεται αναδρομικά τις τιμές των κλειδιών που δεν είναι στη λίστα εξαίρεσης
         for k, v in obj.items():
             if k not in ignore_keys:
                 unwrap_text(v, found_texts)
@@ -123,11 +129,11 @@ def repair_greek_mojibake(text: str) -> str:
         return text
     out = []
     for ch in text:
-        # Αν είναι ήδη ελληνικός χαρακτήρας, άσ' τον όπως είναι
+        # Αν ο χαρακτήρας είναι ήδη κανονικός ελληνικός, τον κρατάμε ως έχει
         if "\u0370" <= ch <= "\u03ff" or "\u1f00" <= ch <= "\u1fff":
             out.append(ch)
             continue
-        # Δοκίμασε να δεις αν ο χαρακτήρας είναι mojibake byte από CP437/Latin-1
+       # Προσπαθεί να ανακτήσει το αρχικό byte από CP437 ή Latin-1
         fixed = False
         for enc in ("cp437", "latin-1"):
             try:
@@ -160,13 +166,13 @@ def repair_greek_mojibake(text: str) -> str:
     return "".join(result)
 
 def extract_clean_text(raw_content):
-    """Εξάγει καθαρό κείμενο από οποιοδήποτε LLM αίτημα (JSON, URL-encoded, Gemini f.req κ.λπ.)."""
+    
     if isinstance(raw_content, bytes):
         raw_content = raw_content.decode('utf-8', errors="replace")
         
     found_texts = []
 
-    # 1. Προσπάθεια ως standard JSON (ChatGPT, Claude, DeepSeek API/Web)
+    # 1. Προσπάθεια ανάγνωσης ως τυπικό JSON
     try:
         data = json.loads(raw_content)
         if isinstance(data, dict):
@@ -178,11 +184,11 @@ def extract_clean_text(raw_content):
     except Exception:
         pass
 
-    # 2. Προσπάθεια ως URL-encoded / Gemini payloads
+    # 2. Προσπάθεια ανάγνωσης ως URL-encoded
     try:
         parsed = urllib.parse.parse_qs(raw_content)
         
-        # Modern Gemini
+       
         req_values = [
             val[0] for key, val in parsed.items()
             if key.startswith("req") and key.endswith("___data__") and val
@@ -195,7 +201,7 @@ def extract_clean_text(raw_content):
                     decoded = item.encode("utf-8", errors="replace")
                 found_texts.append(utf_sequence(decoded))
                 
-        # Legacy Gemini (f.req)
+        
         if "f.req" in parsed:
             outer = json.loads(parsed["f.req"][0])
             unwrap_text(outer, found_texts)
@@ -206,7 +212,7 @@ def extract_clean_text(raw_content):
     if not found_texts:
         return None
 
-    
+    # Αφαιρεί διπλότυπα διατηρώντας τη σειρά και διορθώνει τυχόν ελληνικό mojibake
     joined=" ".join(dict.fromkeys(found_texts))
     return repair_greek_mojibake(joined)
 
@@ -214,6 +220,7 @@ def check_prompt_async(clean_text):
     try:
         fixed_text = repair_greek_mojibake(clean_text)
 
+        # Κόβει μακροσκελή κομμάτια τεκμηρίωσης/οδηγιών εργαλείων (π.χ. Claude Docs) που μπερδεύουν το μοντέλο
         noise_markers = [
             "Create a doc, or apply several operations",
             "Claude Docs Create one object",
@@ -223,7 +230,7 @@ def check_prompt_async(clean_text):
         for marker in noise_markers:
             if marker in cleaned_for_llm:
                 cleaned_for_llm = cleaned_for_llm.split(marker, 1)[0]
-
+        # Περιορίζει το κείμενο στους πρώτους 1500 χαρακτήρες για ταχύτητα και συγκέντρωση
         target_text = cleaned_for_llm.strip()[:1500]
         print(f"\n[DEBUG OLLAMA INPUT] total={len(clean_text)} | head={target_text[:400]}")
         prompt = (
@@ -269,6 +276,7 @@ def check_prompt_async(clean_text):
             "Respond with ONLY ONE WORD: YES or NO.\n<|end|>\n"
             "<|assistant|>\n"
         )
+        # Καλεί το Ollama που τρέχει στον host υπολογιστή εκτός του Docker container
         response = requests.post(
             "http://host.docker.internal:11434/api/generate",
             json={
@@ -294,27 +302,27 @@ def check_prompt_async(clean_text):
 def request(flow: http.HTTPFlow):
     target_domain = flow.request.pretty_host
     
-    # 1. Μόνο LLM domains
+    # Μόνο LLM domains
     if target_domain not in LLM_DOMAINS:
         return
 
-    # 2. Μόνο POST requests
+    # Μόνο POST requests
     if flow.request.method != "POST":
         return
 
-    # 3. Αγνοούμε βοηθητικά endpoints
+    # Αγνοούμε βοηθητικά endpoints
     path = flow.request.path or ""
     path_lower = path.lower()
     if any(k in path_lower for k in IGNORE_PATH_KEYWORDS):
         return
 
 
-    # 4. Ανάγνωση περιεχομένου
+    # Ανάγνωση περιεχομένου
     content = flow.request.get_text(strict=False)
     if not content:
         return
 
-    # 5. Καθολική εξαγωγή κειμένου για όλες τις πλατφόρμες
+    # Καθολική εξαγωγή κειμένου για όλες τις πλατφόρμες
     clean_text = extract_clean_text(content)
     if not clean_text or not clean_text.strip():
         return
@@ -339,7 +347,7 @@ def request(flow: http.HTTPFlow):
             matched_info = "Ollama Semantic Match (Contextual PII)"
             
     client_ip = flow.client_conn.peername[0] if flow.client_conn.peername else "127.0.0.1"    
-    
+    # Αν εντοπιστεί ευαίσθητο περιεχόμενο, επιστρέφει 403 και καταγράφει το περιστατικό
     if detected:
         flow.response = http.Response.make(
             403,
@@ -355,5 +363,5 @@ def request(flow: http.HTTPFlow):
     else:
         action = "allowed"
         matched_info = "None"  
-        
+    # Καταγράφει το αποτέλεσμα (blocked/allowed) στη βάση δεδομένων
     database.add_log(client_ip, target_domain, action, matched_info)
