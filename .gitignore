@@ -5,7 +5,8 @@ __pycache__/
 
 # C extensions
 *.so
-
+#mitmproxy certificate
+.mitmproxy/
 # Distribution / packaging
 .Python
 build/
